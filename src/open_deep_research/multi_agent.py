@@ -1,5 +1,5 @@
 from typing import List, Annotated, TypedDict, operator, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SkipValidation
 
 from langchain.chat_models import init_chat_model
 from langchain_core.tools import tool
@@ -12,6 +12,10 @@ from langgraph.graph import START, END, StateGraph
 from open_deep_research.configuration import Configuration
 from open_deep_research.utils import get_config_value, tavily_search, duckduckgo_search
 from open_deep_research.prompts import SUPERVISOR_INSTRUCTIONS, RESEARCH_INSTRUCTIONS
+
+import warnings
+# Add at the top of your file
+warnings.filterwarnings("ignore", message=".*StructuredTool.*is not a Python type.*")
 
 ## Tools factory - will be initialized based on configuration
 def get_search_tool(config: RunnableConfig):
@@ -108,9 +112,10 @@ async def supervisor(state: ReportState, config: RunnableConfig):
     # Get configuration
     configurable = Configuration.from_runnable_config(config)
     supervisor_model = get_config_value(configurable.supervisor_model)
+    supervisor_provider = get_config_value(configurable.supervisor_provider)
     
     # Initialize the model
-    llm = init_chat_model(model=supervisor_model)
+    llm = init_chat_model(model=supervisor_model, model_provider=supervisor_provider)
     
     # If sections have been completed, but we don't yet have the final report, then we need to initiate writing the introduction and conclusion
     if state.get("completed_sections") and not state.get("final_report"):
@@ -123,7 +128,7 @@ async def supervisor(state: ReportState, config: RunnableConfig):
     # Invoke
     return {
         "messages": [
-            await llm.bind_tools(supervisor_tool_list, parallel_tool_calls=False).ainvoke(
+            await llm.bind_tools(supervisor_tool_list).ainvoke(
                 [
                     {"role": "system",
                      "content": SUPERVISOR_INSTRUCTIONS,
@@ -221,9 +226,10 @@ async def research_agent(state: SectionState, config: RunnableConfig):
     # Get configuration
     configurable = Configuration.from_runnable_config(config)
     researcher_model = get_config_value(configurable.researcher_model)
+    researcher_provider = get_config_value(configurable.researcher_provider)
     
     # Initialize the model
-    llm = init_chat_model(model=researcher_model)
+    llm = init_chat_model(model=researcher_model, model_provider=researcher_provider)
 
     # Get tools based on configuration
     research_tool_list, _ = get_research_tools(config)
